@@ -1,0 +1,220 @@
+
+function main() {
+  inputItems()
+  getItemStock()
+  sort()
+  postSlackMessage()
+  deleteOneWeek()
+}
+
+function　init() {
+  // シートの名前作成
+  const COL_TITLE_ID = 1;
+  const COL_TITLE = 2;
+  const COL_URL = 3;
+  const COL_TAGS1 = 4;
+  const COL_TAGS2 = 5;
+  const COL_TAGS3 = 6;
+  const COL_TAGS4 = 7;
+  const COL_TAGS5 = 8;
+  const COL_LIKE = 9;
+  const COL_STOCK = 10;
+  const COL_ISSEND = 12;
+  const COL_GETDATE = 13;
+
+  var sheet = SpreadsheetApp.getActiveSheet();
+  //シート初期化
+  //sheet.clear();
+  sheet.getRange(1, COL_TITLE_ID).setValue("記事ID");
+  sheet.getRange(1, COL_TITLE).setValue("タイトル");
+  sheet.getRange(1, COL_URL).setValue("URL");
+  sheet.getRange(1, COL_TAGS1).setValue("タグ１");
+  sheet.getRange(1, COL_TAGS2).setValue("タグ２");
+  sheet.getRange(1, COL_TAGS3).setValue("タグ３");
+  sheet.getRange(1, COL_TAGS4).setValue("タグ４");
+  sheet.getRange(1, COL_TAGS5).setValue("タグ５");
+  sheet.getRange(1, COL_LIKE).setValue("いいね数");
+  sheet.getRange(1, COL_STOCK).setValue("ストック数");
+  sheet.getRange(1, COL_ISSEND).setValue("status");
+  sheet.getRange(1, COL_GETDATE).setValue("取得日");
+}
+
+
+
+function inputItems() {
+  const COL_TITLE_ID = 1;
+  const COL_TITLE = 2;
+  const COL_URL = 3;
+  const COL_TAGS = 4;
+  const COL_LIKE = 9;
+  const COL_STOCK = 10;
+  const COL_ISSEND = 12;
+  const COL_GETDATE = 13;
+  
+  // stockが3以上 && 直近１週間前のデータ
+  const API_ENDPOINT = 'https://qiita.com/api/v2/items?page=1&per_page=100&query=stocks%3A%3E6+created%3A%3E';
+  // １週間前を指定する
+  const CREATED_AT = Moment.moment().add(-7,'d').format('YYYY-MM-DD');
+  try {
+    var res = UrlFetchApp.fetch(API_ENDPOINT + CREATED_AT);
+    var json = JSON.parse(res.getContentText());
+    
+    var sheet = SpreadsheetApp.getActiveSheet();
+    
+    // 書き込み関連の処理
+    json.forEach(function(item){
+      lastRow = sheet.getLastRow();
+
+      // 重複チェック　重複していた場合は処理をスキップさせる
+      var ids = sheet.getRange(2, COL_TITLE_ID, lastRow -1).getValues();
+      var isDuplicated = ids.some(function(array, i) {
+        return (array[0] === item["id"]);
+      });
+      if (isDuplicated === true) {
+        Logger.log(item["id"])
+        return;
+      }
+      
+      // 最後の行に追記する形で行書き込み
+      rowToWrite = lastRow + 1   
+      sheet.getRange(rowToWrite, COL_TITLE_ID).setValue(item["id"]);
+      sheet.getRange(rowToWrite, COL_TITLE).setValue(item["title"]);
+      sheet.getRange(rowToWrite, COL_URL).setValue(item["url"]);
+      var tags = item["tags"]
+      tags.forEach(function(tag, i){
+        sheet.getRange(rowToWrite, COL_TAGS + i).setValue(tags[i]["name"]);
+      });
+      sheet.getRange(rowToWrite, COL_LIKE).setValue(item["likes_count"]);
+      var now = Moment.moment().format('YYYYMMDD');  
+      sheet.getRange(rowToWrite, COL_GETDATE).setValue(now);
+    });
+  } catch (ex) {
+      Logger.log(ex)
+  }
+}
+
+function getItemStock() {
+  const COL_TITLE_ID = 1;
+  const COL_TITLE = 2;
+  const COL_URL = 3;
+  const COL_TAGS = 4;
+  const COL_LIKE = 9;
+  const COL_STOCK = 10;
+  const COL_ISSEND = 12;
+  const COL_GETDATE = 13;
+  
+  var sheet = SpreadsheetApp.getActiveSheet();
+  lastRow = sheet.getLastRow();
+  
+  var ids = sheet.getRange(2, COL_TITLE_ID, lastRow -1).getValues();
+  const API_ENDPOINT_REPLACE = 'https://qiita.com/api/v2/items/{id}/stockers?page=1&per_page=100';
+  // 100以上は取得しない。100以上のは送る
+  for(var i = 0;　i < ids.length; i ++) {
+    var API_ENDPOINT = API_ENDPOINT_REPLACE.replace('{id}',ids[i]);
+    
+    try {
+      var res = UrlFetchApp.fetch(API_ENDPOINT);
+      var js = JSON.parse(res.getContentText());
+      var stockNum = Object.keys(js).length;
+      sheet.getRange(i + 2, COL_STOCK).setValue(stockNum);
+    } catch (ex) {
+      Logger.log(ex)
+    }
+    
+  }
+}
+
+function sort() {
+  const COL_LIKE = 9;
+  const COL_STOCK = 10;
+  var sheet = SpreadsheetApp.getActiveSheet();
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  sheet.getRange(2, 1, lastRow, lastCol).sort({column: COL_STOCK, ascending: false});
+  sheet.getRange(2, 1, lastRow, lastCol).sort({column: COL_LIKE, ascending: false});
+}
+
+function postSlackMessage() { const COL_TITLE_ID = 1;
+  const COL_TITLE = 2;
+  const COL_URL = 3;
+  const COL_TAGS = 4;
+  const COL_LIKE = 9;
+  const COL_STOCK = 10;
+  const COL_ISSEND = 12;
+  const COL_GETDATE = 13;
+  
+  var sheet = SpreadsheetApp.getActiveSheet();
+  
+                             
+  var token = PropertiesService.getScriptProperties().getProperty('SLACK_ACCESS_TOKEN');
+ 
+  var slackApp = SlackApp.create(token);
+                             
+  var keyValue = { 'Go': '#com_golang', 
+                   'アジャイル': '#z_agile',
+                   'CI': '#z_cicd',
+                   'JavaScript': '#z_javascript',
+                   'Ruby': '#z_ruby',
+                   'AWS': '#z_aws',
+                   'docker': '#z_docker',
+                   'Java': '#z_java',
+                 };
+                             
+  for(var i = 2;　i < 31; i ++) {
+    // その行がすでに送りずみならcontinue
+    var isSend = sheet.getRange(i, COL_ISSEND).getValue()
+    if (isSend === true) {
+      continue;
+    }
+    // タグ１から5まで
+     for(var t = 0;　t < 5; t ++) {
+       var tag = sheet.getRange(i, t + COL_TAGS).getValue()
+       Object.keys(keyValue).forEach(function(kv){
+         //valueを配列にする
+         var ary = kv.split(',');
+         
+         var exist = ary.some(function(str, i, data) {
+           return (str === tag);
+         });
+         
+         if (exist) {
+           var title = sheet.getRange(i, COL_TITLE).getValue()
+           var url = sheet.getRange(i, COL_URL).getValue()
+           var like = sheet.getRange(i, COL_LIKE).getValue()
+           var stock = sheet.getRange(i, COL_STOCK).getValue()
+                  
+           var options = {
+             channelId: keyValue[kv], //チャンネル名
+             userName: "dairy qiita君", //投稿するbotの名前
+             message: title + "\n" + url + "\n" + "いいね数 = " + like  + " / ストック数 = " + stock  //投稿するメッセージ
+           };
+           
+           slackApp.postMessage(options.channelId, options.message, {username: options.userName});
+   
+           // 最後に送りずみマークのtrueをつける
+           sheet.getRange(i, COL_ISSEND).setValue(true);
+           
+           return;
+         }
+       });
+     }
+  }                   
+}
+
+function deleteOneWeek() {
+  const COL_GETDATE = 13;
+  // １週間前のデータは削除
+  const DELETED_AT = Moment.moment().add(-8,'d').format('YYYYMMDD');
+  var sheet = SpreadsheetApp.getActiveSheet();
+    
+  // 値の比較
+  lastRow = sheet.getLastRow();
+  var dates = sheet.getRange(2, COL_GETDATE, lastRow -1).getValues();
+  dates.forEach(function(date, i){
+    if (DELETED_AT === date.toString()) {
+      sheet.deleteRow(i + 2);
+    }
+  });
+}
+
+
